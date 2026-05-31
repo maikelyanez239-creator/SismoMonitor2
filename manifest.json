@@ -1,0 +1,15 @@
+{
+  "name": "Sistema Sismológico Chilapa",
+  "short_name": "SismoMonitor",
+  "start_url": "./mapa.html",
+  "display": "standalone",
+  "background_color": "#0c111d",
+  "theme_color": "#ff3333",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2885/2885822.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

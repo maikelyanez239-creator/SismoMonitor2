@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="manifest.json">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Estación de Monitoreo Crítico - Multi-Onda</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body {
+            font-family: monospace;
+            margin: 0;
+            padding: 0;
+            background-color: #0c111d;
+            color: #00ff66;
+            text-align: center;
+            transition: background-color 0.2s;
+        }
+        h1 {
+            color: #ff3333;
+            font-size: 14px;
+            margin: 10px 0 2px 0;
+            letter-spacing: 1px;
+        }
+        .subtitulo {
+            color: #8892b0;
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+        #mapa {
+            width: 92%;
+            height: 260px;
+            margin: 0 auto;
+            border: 2px solid #ff3333;
+            border-radius: 8px;
+            background-color: #070a12;
+            touch-action: none; 
+        }
+        .panel-control {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 6px;
+            padding: 8px;
+            margin: 10px auto;
+            width: 86%;
+            text-align: left;
+            font-size: 11px;
+        }
+        
+        /* CUADRO DE ALERTA SÍSMICA CRÍTICA PROPIO */
+        .banner-crisis {
+            display: none;
+            width: 86%;
+            margin: 10px auto;
+            background-color: #3b0008;
+            border: 3px solid #ff0033;
+            border-radius: 6px;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(255, 0, 51, 0.4);
+        }
+
+        /* RELOJ REGRESIVO DE IMPACTO */
+        .reloj-impacto {
+            background-color: #1a0004;
+            border: 1px solid #ff3333;
+            padding: 8px;
+            margin: 8px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: #ff3333;
+            letter-spacing: 1px;
+            animation: parpadeoTexto 1s infinite;
+        }
+
+        .historial-contenedor {
+            width: 92%;
+            margin: 10px auto;
+            text-align: left;
+        }
+        .historial-titulo {
+            color: #00ccff;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .lista-sismos {
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #1f2937;
+            border-radius: 6px;
+            background-color: #070a12;
+            padding: 5px;
+        }
+        .tarjeta-sismo {
+            background-color: #111827;
+            padding: 6px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #fff;
+        }
+        .badge-mag {
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-weight: bold;
+            color: #000;
+        }
+        .btn-tester {
+            width: 92%;
+            padding: 10px;
+            background: #211114;
+            border: 1px solid #ff3333;
+            color: #ff3333;
+            font-family: inherit;
+            font-size: 11px;
+            border-radius: 6px;
+            margin-top: 5px;
+            font-weight: bold;
+        }
+        .flash-alerta-roja {
+            animation: panico 0.25s infinite alternate;
+        }
+        @keyframes panico {
+            0% { background-color: #0c111d; }
+            100% { background-color: #380005; }
+        }
+        @keyframes parpadeoTexto {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>SISMO EN PROCESO - MONITOREO 24H</h1>
+    <div class="subtitulo" id="relojDigital">SISTEMA OPERATIVO</div>
+
+    <div id="mapa"></div>
+
+    <div id="pantallaCrisis" class="banner-crisis">
+        <div style="color: #ff0033; font-weight: bold; font-size: 14px; text-align: center; margin-bottom: 6px; letter-spacing: 1px;">⚠️ ALERTA: SISMO EN PROCESO ⚠️</div>
+        <div><b>EPICENTRO:</b> <span id="crisLug">---</span></div>
+        <div><b>MAGNITUD:</b> <span id="crisMag" style="color: #ff3333; font-weight: bold;">---</span> Mw</div>
+        <div><b>DISTANCIA A ESTACIÓN:</b> <span id="crisDist" style="color: #00ccff; font-weight: bold;">---</span> km</div>
+        
+        <div id="contadorImpacto" class="reloj-impacto">CALCULANDO TIEMPO DE ARRIBO...</div>
+
+        <button onclick="silenciarAlerta()" style="margin-top: 4px; width: 100%; padding: 7px; background:#ff3333; border:none; color:white; font-family:inherit; font-weight:bold; border-radius:4px; font-size:11px;">RECEPTOR INTERRUMPIR / SILENCIAR</button>
+    </div>
+
+    <div class="panel-control">
+        <div style="color: #ffcc00; font-weight: bold; margin-bottom: 2px;">📡 ESTADO DEL FEED (USGS / SSN):</div>
+        <div id="logEstado">Sincronizando satélites...</div>
+        <div style="margin-top: 4px; color: #8892b0; font-size: 10px;" id="sigActualizacion">Próxima consulta: En 60s</div>
+    </div>
+
+    <div class="historial-contenedor">
+        <div class="historial-titulo">📋 REGISTROS REALES EN LA REGIÓN:</div>
+        <div id="listaSismos" class="lista-sismos">
+            <div style="color: #8892b0; text-align: center; padding: 10px;">Descargando datos sísmicos...</div>
+        </div>
+    </div>
+
+    <button class="btn-tester" onclick="simularAlertaInmediata()">⚡ SIMULAR EMBATE SÍSMICO REAL (GUERRERO)</button>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        var miMapa;
+        var capaMarcadores;
+        var segundosParaActualizar = 60;
+        var idsSismosProcesados = new Set();
+        
+        // Coordenadas fijas de tu Estación Base en Chilapa de Álvarez
+        const LAT_CHILAPA = 17.5406;
+        const LNG_CHILAPA = -99.1770;
+
+        // Variables de control de audio y efectos sucesivos
+        var ctxAudio = null;
+        var bucleSirena = null;
+        var bucleOndasSucesivas = null;
+        var cuentaRegresivaIntervalo = null;
+
+        window.onload = function() {
+            miMapa = L.map('mapa', { bounceAtZoomLimits: false, tap: false }).setView([19.4326, -99.1332], 5);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(miMapa);
+
+            capaMarcadores = L.layerGroup().addTo(miMapa);
+            
+            // Dibujar tu base con un pin azul claro distintivo
+            L.marker([LAT_CHILAPA, LNG_CHILAPA]).addTo(miMapa)
+                .bindPopup('<b>Estación de Monitoreo Chilapa</b><br>Coordenadas de Referencia Local.').openPopup();
+
+            consultarServidoresSismicos();
+
+            setInterval(function() {
+                segundosParaActualizar--;
+                document.getElementById('sigActualizacion').innerText = "Próxima consulta automática: En " + segundosParaActualizar + "s";
+                document.getElementById('relojDigital').innerText = "VIGILANCIA ACTIVA: " + new Date().toLocaleTimeString();
+
+                if (segundosParaActualizar <= 0) {
+                    consultarServidoresSismicos();
+                    segundosParaActualizar = 60;
+                }
+            }, 1000);
+        };
+
+        // FÓRMULA MATEMÁTICA NAVAL (HAVERSINE) PARA CALCULAR DISTANCIA EN KM DESDE EL CELULAR
+        function calcularDistanciaKilometros(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radio de la Tierra en km
+            var dLat = (lat2 - lat1) * Math.PI / 180;
+            var dLon = (lon2 - lon1) * Math.PI / 180;
+            var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; 
+        }
+
+        function consultarServidoresSismicos() {
+            document.getElementById('logEstado').innerText = "Escaneando fallas geológicas...";
+            var urlFeed = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+
+            fetch(urlFeed)
+                .then(response => response.json())
+                .then(data => {
+                    capaMarcadores.clearLayers();
+                    var contenedorLista = document.getElementById('listaSismos');
+                    contenedorLista.innerHTML = "";
+                    var sismosEnMexico = 0;
+                    var sismoFuerteParaDetonar = null;
+
+                    data.features.forEach(sismo => {
+                        var coords = sismo.geometry.coordinates;
+                        var lng = coords[0]; var lat = coords[1];
+                        var mag = sismo.properties.mag;
+                        var lugar = sismo.properties.place;
+                        var hora = new Date(sismo.properties.time).toLocaleTimeString();
+                        var idSismo = sismo.id;
+
+                        if (lat >= 14.0 && lat <= 32.5 && lng >= -118.0 && lng <= -86.0) {
+                            sismosEnMexico++;
+                            var colorSismo = mag >= 5.2 ? '#ff0033' : (mag >= 4.0 ? '#ffcc00' : '#00ff66');
+
+                            var circulo = L.circle([lat, lng], { color: colorSismo, fillColor: colorSismo, fillOpacity: 0.3, radius: mag * 17000 });
+                            circulo.bindPopup(`<b>${lugar}</b><br>Magnitud: ${mag}<br>Hora: ${hora}`);
+                            capaMarcadores.addLayer(circulo);
+
+                            var tarjeta = document.createElement('div');
+                            tarjeta.className = 'tarjeta-sismo';
+                            tarjeta.style.borderLeftColor = colorSismo;
+                            tarjeta.innerHTML = `
+                                <div>
+                                    <div style="color: #ffffff; font-weight: bold;">${lugar.replace(", Mexico", " (MX)")}</div>
+                                    <div style="color: #8892b0; font-size: 10px;">Registrado: ${hora}</div>
+                                </div>
+                                <div class="badge-mag" style="background-color: ${colorSismo};">${mag.toFixed(1)}</div>
+                            `;
+
+                            tarjeta.onclick = function() {
+                                miMapa.flyTo([lat, lng], 7);
+                                setTimeout(() => circulo.openPopup(), 1000);
+                            };
+                            contenedorLista.appendChild(tarjeta);
+
+                            // Si entra un sismo real mayor a 5.0 que no hayamos visto en el ciclo previo
+                            if (mag >= 5.0 && !idsSismosProcesados.has(idSismo)) {
+                                sismoFuerteParaDetonar = sismo;
+                            }
+                            idsSismosProcesados.add(idSismo);
+                        }
+                    });
+
+                    if (sismoFuerteParaDetonar) {
+                        var c = sismoFuerteParaDetonar.geometry.coordinates;
+                        detonarSistemaCriticoSucesivo(sismoFuerteParaDetonar.properties.place, sismoFuerteParaDetonar.properties.mag, c[1], c[0]);
+                    }
+
+                    document.getElementById('logEstado').innerText = `Conexión en línea. ${sismosEnMexico} sismos localizados en mapa.`;
+                })
+                .catch(err => {
+                    document.getElementById('logEstado').innerText = "Reconectando canal satelital...";
+                });
+        }
+
+        // MOTOR CENTRAL: ONDAS SUCESIVAS, CONTADOR KILOMÉTRICO Y AUDIO ATERRADOR COMMERCIAL
+        function detonarSistemaCriticoSucesivo(lugar, magnitud, latEpicentro, lngEpicentro) {
+            // 1. Interfaz de Crisis Inmediata
+            document.getElementById('pantallaCrisis').style.display = 'block';
+            document.getElementById('crisLug').innerText = lugar;
+            document.getElementById('crisMag').innerText = magnitud.toFixed(1);
+            document.body.classList.add('flash-alerta-roja');
+
+            // 2. Calcular Distancia Exacta a Chilapa
+            var distanciaKm = calcularDistanciaKilometros(latEpicentro, lngEpicentro, LAT_CHILAPA, LNG_CHILAPA);
+            document.getElementById('crisDist').innerText = distanciaKm.toFixed(1);
+
+            // 3. Calcular tiempo de arriba estimado (Velocidad onda destructiva S ~ 4 km/s promedio)
+            var segundosRestantes = Math.round(distanciaKm / 4.0);
+            if (segundosRestantes < 1) segundosRestantes = 3; // Margen mínimo si es muy cerca
+
+            // Iniciar Reloj Regresivo Físico
+            clearInterval(cuentaRegresivaIntervalo);
+            cuentaRegresivaIntervalo = setInterval(function() {
+                segundosRestantes--;
+                if (segundosRestantes > 0) {
+                    document.getElementById('contadorImpacto').innerText = `⚠️ TIEMPO ESTIMADO DE ARRIBO: ${segundosRestantes} SEGUNDOS`;
+                    document.getElementById('contadorImpacto').style.color = "#ff3333";
+                } else {
+                    document.getElementById('contadorImpacto').innerText = "🚨 ONDA SÍSMICA EN LA ESTACIÓN (IMPACTO) 🚨";
+                    document.getElementById('contadorImpacto').style.color = "#ffcc00";
+                }
+            }, 1000);
+
+            // 4. Zoom al Epicentro de Emergencia
+            miMapa.flyTo([latEpicentro, lngEpicentro], 7);
+
+            // 5. ANIMACIÓN DE ONDAS SUCESIVAS (Sale una tras otra cada 1.5 segundos)
+            clearInterval(bucleOndasSucesivas);
+            var crearOndaIndividual = function() {
+                var radioOnda = 1000;
+                var circuloOnda = L.circle([latEpicentro, lngEpicentro], {
+                    color: '#ff0033',
+                    fillColor: '#ff0033',
+                    fillOpacity: 0.18,
+                    radius: radioOnda
+                }).addTo(miMapa);
+
+                var expandir = setInterval(() => {
+                    radioOnda += 18000; // Velocidad de la animación
+                    circuloOnda.setRadius(radioOnda);
+                    if (radioOnda > 400000) { // Límite de expansión en el mapa
+                        miMapa.removeLayer(circuloOnda);
+                        clearInterval(expandir);
+                    }
+                }, 40);
+            };
+            
+            crearOndaIndividual(); // Primera onda
+            bucleOndasSucesivas = setInterval(crearOndaIndividual, 1600); // Sucesivas en bucle
+
+            // 6. ALARMA COMPLEJA DISONANTE (Simulación comercial de alta tensión)
+            if (!bucleSirena) {
+                var sonarAlarmaTension = function() {
+                    try {
+                        ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+                        
+                        // Generador 1: Tono de ráfaga agresivo
+                        var osc1 = ctxAudio.createOscillator();
+                        var gain1 = ctxAudio.createGain();
+                        osc1.type = 'sawtooth';
+                        osc1.frequency.setValueAtTime(450, ctxAudio.currentTime);
+                        osc1.frequency.linearRampToValueAtTime(750, ctxAudio.currentTime + 0.7);
+
+                        // Generador 2: Tono grave secundario para generar interferencia disonante (ruido de shock)
+                        var osc2 = ctxAudio.createOscillator();
+                        osc2.type = 'triangle';
+                        osc2.frequency.setValueAtTime(455, ctxAudio.currentTime);
+                        osc2.frequency.linearRampToValueAtTime(745, ctxAudio.currentTime + 0.7);
+
+                        osc1.connect(gain1);
+                        osc2.connect(gain1);
+                        gain1.connect(ctxAudio.destination);
+                        
+                        gain1.gain.setValueAtTime(0.35, ctxAudio.currentTime);
+                        
+                        osc1.start();
+                        osc2.start();
+                        
+                        // Duración de la ráfaga acústica
+                        setTimeout(() => { 
+                            osc1.stop(); 
+                            osc2.stop(); 
+                            ctxAudio.close(); 
+                        }, 800);
+                    } catch(e) {}
+                };
+                
+                sonarAlarmaTension();
+                bucleSirena = setInterval(sonarAlarmaTension, 1000); // Pulso rítmico aterrador
+            }
+
+            if (navigator.vibrate) { navigator.vibrate([800, 300, 800]); }
+        }
+
+        // Simulación de prueba ruda en las costas de San Marcos, Guerrero
+        function simularAlertaInmediata() {
+            detonarSistemaCriticoSucesivo("Costa de Guerrero, San Marcos (Simulación)", 7.8, 16.75, -99.30);
+        }
+
+        function silenciarAlerta() {
+            document.body.classList.remove('flash-alerta-roja');
+            document.getElementById('pantallaCrisis').style.display = 'none';
+            clearInterval(bucleSirena); bucleSirena = null;
+            clearInterval(bucleOndasSucesivas); bucleOndasSucesivas = null;
+            clearInterval(cuentaRegresivaIntervalo); cuentaRegresivaIntervalo = null;
+            document.getElementById('contadorImpacto').innerText = "CALCULANDO TIEMPO DE ARRIBO...";
+        }
+    </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log("Service Worker registrado con éxito."))
+      .catch(err => console.log("Error al registrar: ", err));
+  }
+</script>
+</body>
+</html>
